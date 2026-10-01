@@ -7,6 +7,8 @@ import { SewaBaruView } from './components/views/SewaBaruView';
 import { PengembalianView } from './components/views/PengembalianView';
 import { LaporanView } from './components/views/LaporanView';
 import { AdminLoginView } from './components/views/AdminLoginView';
+import { useState } from 'react';
+import { supabase } from './supabaseClient';
 import { RentalAgreementModal } from './components/modals/RentalAgreementModal';
 import { ReturnReceiptModal } from './components/modals/ReturnReceiptModal';
 import { BarcodeModal } from './components/modals/BarcodeModal';
@@ -248,7 +250,45 @@ export default function App() {
   const handleProcessReturnDirectly = (trxId: string) => {
     setCurrentTab('pengembalian');
   };
+export function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Proses autentikasi ke Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (error) {
+      alert('Akses ditolak! Email atau password salah.');
+    } else {
+      alert('Login berhasil! Selamat datang.');
+      console.log('User data:', data.user);
+    }
+  };
+
+  return (
+    <form onSubmit={handleLogin}>
+      <input 
+        type="email" 
+        placeholder="Email" 
+        value={email} 
+        onChange={(e) => setEmail(e.target.value)} 
+      />
+      <input 
+        type="password" 
+        placeholder="Password" 
+        value={password} 
+        onChange={(e) => setPassword(e.target.value)} 
+      />
+      <button type="submit">Masuk ke Sistem</button>
+    </form>
+  );
+}
   const handleLoginSuccess = (user: AdminUser) => {
     setCurrentAdmin(user);
     try {
