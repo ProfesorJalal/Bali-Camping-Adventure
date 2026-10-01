@@ -18,55 +18,6 @@ import {
 import { BaliCampingBadge } from '../AppLogo';
 import { AdminUser } from '../../types';
 import { DEFAULT_ADMIN_USERS } from '../../data/mockData';
-
-interface AdminLoginViewProps {
-  onLoginSuccess: (user: AdminUser) => void;
-}
-
-export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState;
-  const [password, setPassword] = useState;
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [infoModalOpen, setInfoModalOpen] = useState(false);
-
-  const handleManualLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setIsLoading(true);
-
-    setTimeout(() => {
-      const adminUser = DEFAULT_ADMIN_USERS[0];
-      const isEmailMatch = adminUser && adminUser.email.toLowerCase() === email.trim().toLowerCase();
-
-      if (isEmailMatch || (email.trim() && password.length >= 4)) {
-        setIsLoading(false);
-        const userToLogin = isEmailMatch ? adminUser : {
-          ...adminUser,
-          email: email.trim(),
-        };
-        onLoginSuccess(userToLogin);
-      } else {
-        setIsLoading(false);
-        setErrorMessage('Email atau kata sandi tidak valid. Silakan gunakan akun admin resmi (admin@balicamping.id / admin123).');
-      }
-    }, 500);
-  };
-
-  const handleQuickLogin = (user: AdminUser) => {
-    setEmail(user.email);
-    setPassword('admin123');
-    setErrorMessage(null);
-    setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
-      onLoginSuccess(user);
-    }, 400);
-  };
-
   return (
     <div className="min-h-screen bg-[#F4F5F7] flex flex-col justify-between selection:bg-[#1B4332] selection:text-white relative overflow-x-hidden font-sans">
       {/* Decorative Background Accents */}
