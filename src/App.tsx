@@ -6,7 +6,6 @@ import { InventarisView } from './components/views/InventarisView';
 import { SewaBaruView } from './components/views/SewaBaruView';
 import { PengembalianView } from './components/views/PengembalianView';
 import { LaporanView } from './components/views/LaporanView';
-import { AdminLoginView } from './components/views/AdminLoginView';
 import { useState } from 'react';
 import { supabase } from './supabaseClient';
 import { RentalAgreementModal } from './components/modals/RentalAgreementModal';
@@ -289,29 +288,7 @@ export function Login() {
     </form>
   );
 }
-  const handleLoginSuccess = (user: AdminUser) => {
-    setCurrentAdmin(user);
-    try {
-      localStorage.setItem('bali_camping_admin_session', JSON.stringify(user));
-      localStorage.removeItem('bali_camping_admin_shift');
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleLogout = () => {
-    setCurrentAdmin(null);
-    try {
-      localStorage.removeItem('bali_camping_admin_session');
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // If not authenticated as Admin, show Admin Login View
-  if (!currentAdmin) {
-    return <AdminLoginView onLoginSuccess={handleLoginSuccess} />;
-  }
+  
 
   const totalPhysicalUnits = inventory.reduce((sum, item) => sum + (item.totalUnits || 0), 0);
   const availablePhysicalUnits = inventory.reduce((sum, item) => sum + (item.availableUnits || 0), 0);
