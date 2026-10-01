@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase } from './supabaseClient';
 import { 
   Lock, 
   Mail, 
@@ -17,7 +18,25 @@ import {
 } from 'lucide-react';
 import { BaliCampingBadge } from '../AppLogo';
 import { AdminUser } from '../../types';
-import { DEFAULT_ADMIN_USERS } from '../../data/mockData';
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  // Memverifikasi email dan password langsung ke Supabase Auth
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: emailInput,       // ganti dengan state variable email kamu
+    password: passwordInput, // ganti dengan state variable password kamu
+  });
+
+  if (error) {
+    // Jika email/password salah atau user belum terdaftar
+    alert('Akses Ditolak: Email atau password tidak terdaftar!');
+    return;
+  }
+
+  // Jika sukses, ijinkan pengguna masuk ke dashboard
+  setIsLoggedIn(true);
+  console.log('Login berhasil sebagai:', data.user.email);
+};
   return (
     <div className="min-h-screen bg-[#F4F5F7] flex flex-col justify-between selection:bg-[#1B4332] selection:text-white relative overflow-x-hidden font-sans">
       {/* Decorative Background Accents */}
