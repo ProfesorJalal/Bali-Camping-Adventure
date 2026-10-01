@@ -6,17 +6,62 @@ import { InventarisView } from './components/views/InventarisView';
 import { SewaBaruView } from './components/views/SewaBaruView';
 import { PengembalianView } from './components/views/PengembalianView';
 import { LaporanView } from './components/views/LaporanView';
-import { useState } from 'react';
-import { supabase } from './supabaseClient';
 import { RentalAgreementModal } from './components/modals/RentalAgreementModal';
 import { ReturnReceiptModal } from './components/modals/ReturnReceiptModal';
 import { BarcodeModal } from './components/modals/BarcodeModal';
 import { ItemFormModal } from './components/modals/ItemFormModal';
-import { INITIAL_INVENTORY, INITIAL_TRANSACTIONS, DEFAULT_ADMIN_USERS } from './data/mockData';
+import { INITIAL_INVENTORY, INITIAL_TRANSACTIONS } from './data/mockData';
 import { InventoryItem, RentalTransaction, ViewTab, AdminUser } from './types';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Lock } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 export default function App() {
+  // State Autentikasi Supabase
+  const [session, setSession] = useState<any>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  // 1. Cek Sesi Login Supabase saat Pertama Kali App Dimuat
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoadingAuth(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoadingAuth(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Handler Login Supabase
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setLoginError('Akses Ditolak: Email atau password salah!');
+    } else {
+      setSession(data.session);
+    }
+  };
+
+  // Handler Logout Supabase
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  // State Aplikasi Utama
   const [currentTab, setCurrentTab] = useState<ViewTab>('dashboard');
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     try {
@@ -70,34 +115,13 @@ export default function App() {
     }
   }, [transactions]);
 
-  // Admin Authentication State
-  const [currentAdmin, setCurrentAdmin] = useState<AdminUser | null>(() => {
-    try {
-      const saved = localStorage.getItem('bali_camping_admin_session');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.email === 'admin@balicamping.id') {
-          return parsed;
-        }
-        // If an old dummy account session exists, upgrade to official single admin
-        return DEFAULT_ADMIN_USERS[0];
-      }
-    } catch (e) {
-      console.error('Failed to parse admin session', e);
-    }
-    return null;
-  });
-
   // Modal States
   const [rentalContractData, setRentalContractData] = useState<any>(null);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-
   const [returnReceiptData, setReturnReceiptData] = useState<any>(null);
   const [isReturnReceiptOpen, setIsReturnReceiptOpen] = useState(false);
-
   const [barcodeModalItem, setBarcodeModalItem] = useState<InventoryItem | null>(null);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
-
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isItemFormModalOpen, setIsItemFormModalOpen] = useState(false);
 
@@ -136,7 +160,7 @@ export default function App() {
         totalPaid: data.totalPayment,
         paymentMethod: data.paymentMethod,
         status: 'Aktif',
-        dispatchOfficer: currentAdmin?.name || 'Administrator',
+        dispatchOfficer: session?.user?.email || 'Administrator',
         createdAt: data.createdAt || new Date().toISOString(),
       };
 
@@ -146,7 +170,6 @@ export default function App() {
         return [newTrx, ...prev];
       });
 
-      // Deduct inventory available units
       setInventory(prev => prev.map(item => {
         const matched = data.items.find((i: any) => i.item.id === item.id);
         if (matched) {
@@ -161,7 +184,6 @@ export default function App() {
       }));
 
       setIsContractModalOpen(false);
-      // Navigate to Log & Finansial
       setCurrentTab('laporan');
     }
   };
@@ -249,46 +271,77 @@ export default function App() {
   const handleProcessReturnDirectly = (trxId: string) => {
     setCurrentTab('pengembalian');
   };
-export function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Proses autentikasi ke Supabase
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
+  // Tampilan Loading Memeriksa Sesi Login
+  if (loadingAuth) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#F4F5F7]">
+        <p className="text-gray-600 font-medium">Memuat sistem autentikasi...</p>
+      </div>
+    );
+  }
 
-    if (error) {
-      alert('Akses ditolak! Email atau password salah.');
-    } else {
-      alert('Login berhasil! Selamat datang.');
-      console.log('User data:', data.user);
-    }
+  // Tampilan Form Login (Jika User Belum Login di Supabase)
+  if (!session) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#1B4332] px-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex p-3 bg-[#1B4332]/10 rounded-full mb-3">
+              <Lock className="w-8 h-8 text-[#1B4332]" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900">Portal Operasional</h2>
+            <p className="text-sm text-gray-500 mt-1">Bali Camping Adventure</p>
+          </div>
+
+          {loginError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg text-center font-medium">
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                required
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B4332] focus:outline-none"
+                placeholder="nama@balicamping.id"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input
+                type="password"
+                required
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B4332] focus:outline-none"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-[#1B4332] hover:bg-[#2D6A4F] text-white font-semibold rounded-lg shadow transition duration-200"
+            >
+              Masuk ke Sistem
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Tampilan Utama Dashboard Operasional (Hanya Muncul Jika Sudah Login)
+  const currentAdminObj: AdminUser = {
+    id: session.user.id,
+    name: session.user.email?.split('@')[0] || 'Admin',
+    email: session.user.email || '',
+    role: 'Super Admin',
   };
-
-  return (
-    <form onSubmit={handleLogin}>
-      <input 
-        type="email" 
-        placeholder="Email" 
-        value={email} 
-        onChange={(e) => setEmail(e.target.value)} 
-      />
-      <input 
-        type="password" 
-        placeholder="Password" 
-        value={password} 
-        onChange={(e) => setPassword(e.target.value)} 
-      />
-      <button type="submit">Masuk ke Sistem</button>
-    </form>
-  );
-}
-  
 
   const totalPhysicalUnits = inventory.reduce((sum, item) => sum + (item.totalUnits || 0), 0);
   const availablePhysicalUnits = inventory.reduce((sum, item) => sum + (item.availableUnits || 0), 0);
@@ -319,7 +372,7 @@ export function Login() {
           totalItemsCount={totalPhysicalUnits}
           availableItemsCount={availablePhysicalUnits}
           maintenanceItemsCount={maintenancePhysicalUnits}
-          currentAdmin={currentAdmin}
+          currentAdmin={currentAdminObj}
           onLogout={handleLogout}
         />
       </div>
@@ -343,7 +396,7 @@ export function Login() {
                   setCurrentTab('inventaris');
                 }
               }}
-              currentAdmin={currentAdmin}
+              currentAdmin={currentAdminObj}
               onLogout={handleLogout}
             />
           </div>
