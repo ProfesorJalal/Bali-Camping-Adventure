@@ -177,77 +177,88 @@ export default function App() {
   };
 
   const handleCompleteRentalTransaction = async (data: any) => {
-    if (data && data.bookingId) {
-      const newTrx: RentalTransaction = {
-        id: data.bookingId,
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        customerKtp: data.customerKtp,
-        idTypeHeld: data.guaranteeType,
-        destination: data.destination,
-        pickupDate: data.pickupDate,
-        pickupTime: data.pickupTime || '09:00 WITA',
-        returnDate: data.returnDate,
-        returnTime: data.returnTime || '18:00 WITA',
-        durationDays: data.durationDays,
-        items: data.items.map((i: any) => ({
-          itemSku: i.item.sku,
-          itemName: i.item.name,
-          category: i.item.category,
-          quantity: i.quantity,
-          unitPrice: i.pricePerDay,
-          unitDeposit: i.item.deposit || 0,
-          imageUrl: i.item.imageUrl,
-        })),
-        subtotal: data.subtotalSewa,
-        discount: data.discountAmount,
-        depositPaid: data.refundableDeposit,
-        totalPaid: data.totalPayment,
-        paymentMethod: data.paymentMethod,
-        status: 'Aktif',
-        dispatchOfficer: session?.user?.email || 'Administrator',
-        createdAt: data.createdAt || new Date().toISOString(),
-      };
+    if (!data || !data.bookingId) return;
 
-      setTransactions(prev => {
-        const exists = prev.some(t => t.id === newTrx.id);
-        if (exists) return prev;
-        return [newTrx, ...prev];
-      });
+    const newTrx: RentalTransaction = {
+      id: data.bookingId,
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      customerKtp: data.customerKtp,
+      idTypeHeld: data.guaranteeType,
+      destination: data.destination,
+      pickupDate: data.pickupDate,
+      pickupTime: data.pickupTime || '09:00 WITA',
+      returnDate: data.returnDate,
+      returnTime: data.returnTime || '18:00 WITA',
+      durationDays: data.durationDays,
+      items: data.items.map((i: any) => ({
+        itemSku: i.item.sku,
+        itemName: i.item.name,
+        category: i.item.category,
+        quantity: i.quantity,
+        unitPrice: i.pricePerDay,
+        unitDeposit: i.item.deposit || 0,
+        imageUrl: i.item.imageUrl,
+      })),
+      subtotal: data.subtotalSewa,
+      discount: data.discountAmount,
+      depositPaid: data.refundableDeposit,
+      totalPaid: data.totalPayment,
+      paymentMethod: data.paymentMethod,
+      status: 'Aktif',
+      dispatchOfficer: session?.user?.email || 'Administrator',
+      createdAt: data.createdAt || new Date().toISOString(),
+    };
 
-      // Update state inventory & simpan perubahan stok ke Supabase
-      const updatedInventory = inventory.map(item => {
-        const matched = data.items.find((i: any) => i.item.id === item.id || i.item.sku === item.sku);
-        if (matched) {
-          const rentedCount = matched.quantity;
-          return {
-            ...item,
-            availableUnits: Math.max(0, item.availableUnits - rentedCount),
-            rentedUnits: (item.rentedUnits || 0) + rentedCount,
-          };
-        }
-        return item;
-      });
+    // 1. Simpan Transaksi Baru Ke State
+    setTransactions((prev) => {
+      const exists = prev.some((t) => t.id === newTrx.id);
+      if (exists) return prev;
+      return [newTrx, ...prev];
+    });
 
-      setInventory(updatedInventory);
+    // 2. Hitung Ulang Stok Inventory (Sewa Baru)
+    const updatedInventory = inventory.map((item) => {
+      const matched = data.items.find(
+        (i: any) => i.item.id === item.id || i.item.sku === item.sku
+      );
+      if (matched) {
+        const rentedQty = matched.quantity;
+        return {
+          ...item,
+          availableUnits: Math.max(0, item.availableUnits - rentedQty),
+          rentedUnits: (item.rentedUnits || 0) + rentedQty,
+        };
+      }
+      return item;
+    });
 
-      // Upsert Transaction ke Supabase
+    setInventory(updatedInventory);
+
+    // 3. Simpan Ke Supabase (Database)
+    try {
       await supabase.from('transactions').upsert([newTrx]);
 
-      // Update stok inventory di Supabase
       for (const item of updatedInventory) {
-        const matched = data.items.find((i: any) => i.item.id === item.id || i.item.sku === item.sku);
+        const matched = data.items.find(
+          (i: any) => i.item.id === item.id || i.item.sku === item.sku
+        );
         if (matched) {
-          await supabase.from('inventory').update({
-            available_units: item.availableUnits,
-            rented_units: item.rentedUnits,
-          }).eq('id', item.id);
+          await supabase
+            .from('inventory')
+            .update({
+              available_units: item.availableUnits,
+              rented_units: item.rentedUnits,
+            })
+            .eq('id', item.id);
         }
       }
-
-      setIsContractModalOpen(false);
-      setCurrentTab('laporan');
+    } catch (err) {
+      console.error('Error syncing rental transaction to Supabase:', err);
     }
+
+    setIsContractModalOpen(false);
+    setCurrentTab('laporan');
   };
 
   const handleCompleteReturn = async (summary: any) => {
@@ -255,12 +266,14 @@ export default function App() {
     setIsReturnReceiptOpen(true);
 
     if (summary && summary.trxId) {
-      const trx = transactions.find(t => t.id === summary.trxId);
-      
+      const trx = transactions.find((t) => t.id === summary.trxId);
+
       if (trx) {
-        // 1. Tambahkan kembali stok yang dikembalikan ke inventory
-        const updatedInventory = inventory.map(item => {
-          const matched = trx.items.find(i => i.itemSku === item.sku || i.itemName === item.name);
+        // 1. Kembalikan stok ke inventory
+        const updatedInventory = inventory.map((item) => {
+          const matched = trx.items.find(
+            (i) => i.itemSku === item.sku || i.itemName === item.name
+          );
           if (matched) {
             return {
               ...item,
@@ -273,21 +286,26 @@ export default function App() {
 
         setInventory(updatedInventory);
 
-        // 2. Update stok di database Supabase
+        // 2. Update stok di Supabase
         for (const item of updatedInventory) {
-          const matched = trx.items.find(i => i.itemSku === item.sku || i.itemName === item.name);
+          const matched = trx.items.find(
+            (i) => i.itemSku === item.sku || i.itemName === item.name
+          );
           if (matched) {
-            await supabase.from('inventory').update({
-              available_units: item.availableUnits,
-              rented_units: item.rentedUnits,
-            }).eq('id', item.id);
+            await supabase
+              .from('inventory')
+              .update({
+                available_units: item.availableUnits,
+                rented_units: item.rentedUnits,
+              })
+              .eq('id', item.id);
           }
         }
       }
 
       // 3. Update status transaksi menjadi 'Selesai'
-      setTransactions(prev =>
-        prev.map(t => (t.id === summary.trxId ? { ...t, status: 'Selesai' } : t))
+      setTransactions((prev) =>
+        prev.map((t) => (t.id === summary.trxId ? { ...t, status: 'Selesai' } : t))
       );
 
       await supabase.from('transactions').update({ status: 'Selesai' }).eq('id', summary.trxId);
@@ -305,7 +323,9 @@ export default function App() {
       // Jika transaksi belum selesai (masih Aktif), kembalikan stoknya ke Inventory
       if (targetTrx && targetTrx.status !== 'Selesai' && targetTrx.items) {
         const updatedInventory = inventory.map((item) => {
-          const matched = targetTrx.items.find((i) => i.itemSku === item.sku || i.itemName === item.name);
+          const matched = targetTrx.items.find(
+            (i) => i.itemSku === item.sku || i.itemName === item.name
+          );
           if (matched) {
             return {
               ...item,
@@ -318,14 +338,18 @@ export default function App() {
 
         setInventory(updatedInventory);
 
-        // Update stok database
         for (const item of updatedInventory) {
-          const matched = targetTrx.items.find((i) => i.itemSku === item.sku || i.itemName === item.name);
+          const matched = targetTrx.items.find(
+            (i) => i.itemSku === item.sku || i.itemName === item.name
+          );
           if (matched) {
-            await supabase.from('inventory').update({
-              available_units: item.availableUnits,
-              rented_units: item.rentedUnits,
-            }).eq('id', item.id);
+            await supabase
+              .from('inventory')
+              .update({
+                available_units: item.availableUnits,
+                rented_units: item.rentedUnits,
+              })
+              .eq('id', item.id);
           }
         }
       }
@@ -338,7 +362,6 @@ export default function App() {
         return;
       }
 
-      // Update state lokal transaksi
       setTransactions((prev) => prev.filter((t) => t.id !== trxId));
       alert(`Transaksi #${trxId} berhasil dihapus.`);
     } catch (err) {
@@ -363,7 +386,7 @@ export default function App() {
   };
 
   const handleDeleteInventoryItem = async (id: string) => {
-    setInventory(prev => prev.filter(item => item.id !== id));
+    setInventory((prev) => prev.filter((item) => item.id !== id));
     await supabase.from('inventory').delete().eq('id', id);
   };
 
@@ -381,7 +404,7 @@ export default function App() {
         deposit: cleanDeposit,
       } as InventoryItem;
 
-      setInventory(prev => prev.map(i => (i.id === editingItem.id ? updatedItem : i)));
+      setInventory((prev) => prev.map((i) => (i.id === editingItem.id ? updatedItem : i)));
     } else {
       updatedItem = {
         id: `inv-${Date.now()}`,
@@ -400,7 +423,7 @@ export default function App() {
         deposit: cleanDeposit,
         locationRack: savedItem.locationRack || 'Rak A1',
       };
-      setInventory(prev => [updatedItem, ...prev]);
+      setInventory((prev) => [updatedItem, ...prev]);
     }
 
     // Simpan/Update ke Database Supabase
@@ -423,7 +446,7 @@ export default function App() {
     }]);
   };
 
-  const handleProcessReturnDirectly = (trxId: string) => {
+  const handleProcessReturnDirectly = (_trxId: string) => {
     setCurrentTab('pengembalian');
   };
 
@@ -501,7 +524,7 @@ export default function App() {
   const totalPhysicalUnits = inventory.reduce((sum, item) => sum + (item.totalUnits || 0), 0);
   const availablePhysicalUnits = inventory.reduce((sum, item) => sum + (item.availableUnits || 0), 0);
   const maintenancePhysicalUnits = inventory.reduce((sum, item) => sum + (item.maintenanceUnits || 0), 0);
-  const overdueCount = transactions.filter(t => t.status === 'Overdue' || t.status === 'Terlambat').length;
+  const overdueCount = transactions.filter((t) => t.status === 'Overdue' || t.status === 'Terlambat').length;
 
   return (
     <div className="flex h-screen bg-[#F4F5F7] text-[#1F2937] font-sans antialiased overflow-hidden selection:bg-[#1B4332] selection:text-white">
