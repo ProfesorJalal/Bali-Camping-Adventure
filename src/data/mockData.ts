@@ -1,4 +1,4 @@
-import { supabase } from '../services/supabaseClient'; // Sesuaikan path supabase client kamu
+import { supabase } from '../supabaseClient'; // Sesuaikan path supabase client kamu
 
 // Fungsi untuk memaksa Supabase mengikuti data yang ada di Web
 export const syncWebDataToSupabase = async (currentInventoryData: InventoryItem[]) => {
