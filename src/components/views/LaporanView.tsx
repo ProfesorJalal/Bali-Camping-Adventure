@@ -14,18 +14,21 @@ import {
   CreditCard,
   User,
   Clock,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { InventoryItem, RentalTransaction } from '../../types';
 
 interface LaporanViewProps {
   inventory?: InventoryItem[];
   transactions?: RentalTransaction[];
+  onDeleteTransaction?: (id: string) => void;
 }
 
 export const LaporanView: React.FC<LaporanViewProps> = ({
   inventory = [],
   transactions = [],
+  onDeleteTransaction,
 }) => {
   const [reportPeriod, setReportPeriod] = useState<'oktober' | 'september' | 'q3'>('oktober');
 
@@ -39,7 +42,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
   if (transactions.length > 0) {
     const itemMap = new Map<string, { count: number; revenue: number }>();
     transactions.forEach(t => {
-      t.items.forEach(item => {
+      t.items?.forEach(item => {
         const existing = itemMap.get(item.itemName) || { count: 0, revenue: 0 };
         existing.count += item.quantity;
         existing.revenue += item.quantity * item.unitPrice;
@@ -312,6 +315,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                   <th className="py-3 px-4 text-right">Total Kas Masuk</th>
                   <th className="py-3 px-4 text-center">Metode Bayar</th>
                   <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E5E7EB]">
@@ -342,7 +346,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="text-xs font-medium text-[#111827] max-w-xs">
-                        {t.items.map((it, i) => (
+                        {t.items?.map((it, i) => (
                           <span key={i} className="inline-block bg-[#F3F4F6] text-[#374151] rounded px-1.5 py-0.5 text-[10px] mr-1 mb-1">
                             {it.itemName} ({it.quantity}x)
                           </span>
@@ -380,6 +384,15 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                       }`}>
                         {t.status || 'Aktif'}
                       </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => onDeleteTransaction && onDeleteTransaction(t.id)}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Hapus Transaksi"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}

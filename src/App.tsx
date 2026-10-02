@@ -215,8 +215,9 @@ export default function App() {
         return [newTrx, ...prev];
       });
 
-      setInventory(prev => prev.map(item => {
-        const matched = data.items.find((i: any) => i.item.id === item.id);
+      // Update state inventory & simpan perubahan stok ke Supabase
+      const updatedInventory = inventory.map(item => {
+        const matched = data.items.find((i: any) => i.item.id === item.id || i.item.sku === item.sku);
         if (matched) {
           const rentedCount = matched.quantity;
           return {
@@ -226,10 +227,23 @@ export default function App() {
           };
         }
         return item;
-      }));
+      });
+
+      setInventory(updatedInventory);
 
       // Upsert Transaction ke Supabase
       await supabase.from('transactions').upsert([newTrx]);
+
+      // Update stok inventory di Supabase
+      for (const item of updatedInventory) {
+        const matched = data.items.find((i: any) => i.item.id === item.id || i.item.sku === item.sku);
+        if (matched) {
+          await supabase.from('inventory').update({
+            available_units: item.availableUnits,
+            rented_units: item.rentedUnits,
+          }).eq('id', item.id);
+        }
+      }
 
       setIsContractModalOpen(false);
       setCurrentTab('laporan');
@@ -242,9 +256,11 @@ export default function App() {
 
     if (summary && summary.trxId) {
       const trx = transactions.find(t => t.id === summary.trxId);
+      
       if (trx) {
-        setInventory(prev => prev.map(item => {
-          const matched = trx.items.find(i => i.itemSku === item.sku);
+        // 1. Tambahkan kembali stok yang dikembalikan ke inventory
+        const updatedInventory = inventory.map(item => {
+          const matched = trx.items.find(i => i.itemSku === item.sku || i.itemName === item.name);
           if (matched) {
             return {
               ...item,
@@ -253,15 +269,81 @@ export default function App() {
             };
           }
           return item;
-        }));
+        });
+
+        setInventory(updatedInventory);
+
+        // 2. Update stok di database Supabase
+        for (const item of updatedInventory) {
+          const matched = trx.items.find(i => i.itemSku === item.sku || i.itemName === item.name);
+          if (matched) {
+            await supabase.from('inventory').update({
+              available_units: item.availableUnits,
+              rented_units: item.rentedUnits,
+            }).eq('id', item.id);
+          }
+        }
       }
 
+      // 3. Update status transaksi menjadi 'Selesai'
       setTransactions(prev =>
         prev.map(t => (t.id === summary.trxId ? { ...t, status: 'Selesai' } : t))
       );
 
-      // Update status di Supabase
       await supabase.from('transactions').update({ status: 'Selesai' }).eq('id', summary.trxId);
+    }
+  };
+
+  // Handler Hapus Log Transaksi dari Laporan / Finansial
+  const handleDeleteTransaction = async (trxId: string) => {
+    const confirmed = window.confirm(`Apakah Anda yakin ingin menghapus transaksi #${trxId}?`);
+    if (!confirmed) return;
+
+    try {
+      const targetTrx = transactions.find((t) => t.id === trxId);
+
+      // Jika transaksi belum selesai (masih Aktif), kembalikan stoknya ke Inventory
+      if (targetTrx && targetTrx.status !== 'Selesai' && targetTrx.items) {
+        const updatedInventory = inventory.map((item) => {
+          const matched = targetTrx.items.find((i) => i.itemSku === item.sku || i.itemName === item.name);
+          if (matched) {
+            return {
+              ...item,
+              availableUnits: item.availableUnits + matched.quantity,
+              rentedUnits: Math.max(0, item.rentedUnits - matched.quantity),
+            };
+          }
+          return item;
+        });
+
+        setInventory(updatedInventory);
+
+        // Update stok database
+        for (const item of updatedInventory) {
+          const matched = targetTrx.items.find((i) => i.itemSku === item.sku || i.itemName === item.name);
+          if (matched) {
+            await supabase.from('inventory').update({
+              available_units: item.availableUnits,
+              rented_units: item.rentedUnits,
+            }).eq('id', item.id);
+          }
+        }
+      }
+
+      // Hapus transaksi dari Supabase
+      const { error } = await supabase.from('transactions').delete().eq('id', trxId);
+
+      if (error) {
+        alert('Gagal menghapus transaksi dari database: ' + error.message);
+        return;
+      }
+
+      // Update state lokal transaksi
+      setTransactions((prev) => prev.filter((t) => t.id !== trxId));
+      alert(`Transaksi #${trxId} berhasil dihapus.`);
+    } catch (err) {
+      console.error('Error saat menghapus transaksi:', err);
+      alert('Terjadi kesalahan saat menghapus transaksi.');
     }
   };
 
@@ -519,6 +601,7 @@ export default function App() {
               <LaporanView 
                 inventory={inventory}
                 transactions={transactions}
+                onDeleteTransaction={handleDeleteTransaction}
               />
             )}
           </div>
