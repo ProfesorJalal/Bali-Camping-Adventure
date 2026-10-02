@@ -1,34 +1,35 @@
-import { InventoryItem, RentalTransaction, ReturnVerificationState, AdminUser } from '../types';
+import { supabase } from '../services/supabaseClient'; // Sesuaikan path supabase client kamu
 
-/**
- * INITIAL_INVENTORY is initialized as empty so that the admin
- * can input items manually from the "Inventaris" menu.
- */
-export const INITIAL_INVENTORY: InventoryItem[] = [];
+// Fungsi untuk memaksa Supabase mengikuti data yang ada di Web
+export const syncWebDataToSupabase = async (currentInventoryData: InventoryItem[]) => {
+  try {
+    console.log('Mulai menyinkronkan data web ke Supabase...');
 
-/**
- * INITIAL_TRANSACTIONS is initialized as empty so that the admin
- * can create rental transactions from "Sewa Baru".
- */
-export const INITIAL_TRANSACTIONS: RentalTransaction[] = [];
+    // 1. Hapus data lama yang ada di Supabase agar tidak bentrok
+    const { error: deleteError } = await supabase
+      .from('inventory')
+      .delete()
+      .neq('id', '0'); // Menghapus semua baris
 
-/**
- * Empty inspection state.
- */
-export const INITIAL_INSPECTION_STATE: ReturnVerificationState | null = null;
+    if (deleteError) {
+      console.error('Gagal membersihkan data Supabase:', deleteError);
+    }
 
-/**
- * Authorized single Administrator profile for depot system access.
- * Only one admin account is maintained, without any dummy staff accounts.
- */
-export const DEFAULT_ADMIN_USERS: AdminUser[] = [
-  {
-    id: 'adm-admin',
-    name: 'Administrator',
-    email: 'admin@balicamping.id',
-    role: 'Super Admin',
-    gate: 'Bali Camping Adventure',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80',
-    phone: '0812-3456-7890',
-  },
-];
+    // 2. Masukkan seluruh data inventaris yang ada di web ke Supabase
+    if (currentInventoryData && currentInventoryData.length > 0) {
+      const { data, error: insertError } = await supabase
+        .from('inventory')
+        .upsert(currentInventoryData);
+
+      if (insertError) {
+        console.error('Gagal mengirim data ke Supabase:', insertError);
+        alert('Gagal menyinkronkan data ke Supabase: ' + insertError.message);
+      } else {
+        console.log('Berhasil menyinkronkan data ke Supabase!', data);
+        alert('Berhasil! Database Supabase sekarang sudah 100% sama dengan data Web.');
+      }
+    }
+  } catch (err) {
+    console.error('Error Sync:', err);
+  }
+};
