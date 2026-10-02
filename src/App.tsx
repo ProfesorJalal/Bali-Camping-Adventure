@@ -10,7 +10,6 @@ import { RentalAgreementModal } from './components/modals/RentalAgreementModal';
 import { ReturnReceiptModal } from './components/modals/ReturnReceiptModal';
 import { BarcodeModal } from './components/modals/BarcodeModal';
 import { ItemFormModal } from './components/modals/ItemFormModal';
-import { INITIAL_INVENTORY, INITIAL_TRANSACTIONS } from './data/mockData';
 import { InventoryItem, RentalTransaction, ViewTab, AdminUser } from './types';
 import { Menu, X, Lock } from 'lucide-react';
 import { supabase } from './supabaseClient';
@@ -63,12 +62,14 @@ export default function App() {
 
   // State Aplikasi Utama
   const [currentTab, setCurrentTab] = useState<ViewTab>('dashboard');
+  
+  // Initialize State Inventory
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     try {
       const saved = localStorage.getItem('bali_camping_inventory_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((item: InventoryItem) => ({
             ...item,
             dailyRate: Math.max(1000, Math.round((Number(item.dailyRate) || 1000) / 1000) * 1000),
@@ -79,26 +80,70 @@ export default function App() {
     } catch (e) {
       console.error('Failed to parse inventory', e);
     }
-    return INITIAL_INVENTORY;
+    return [];
   });
 
+  // Initialize State Transactions
   const [transactions, setTransactions] = useState<RentalTransaction[]>(() => {
     try {
       localStorage.removeItem('bali_camping_transactions_v2');
       localStorage.removeItem('bali_camping_transactions');
       const saved = localStorage.getItem('bali_camping_transactions_v3');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.error('Failed to parse transactions', e);
     }
-    return INITIAL_TRANSACTIONS;
+    return [];
   });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Sync to localStorage
+  // 2. Load Data Langsung dari Database Supabase Saat Login Berhasil
+  useEffect(() => {
+    if (!session) return;
+
+    async function fetchSupabaseData() {
+      try {
+        // Fetch Inventory
+        const { data: dbInventory, error: invErr } = await supabase.from('inventory').select('*');
+        if (!invErr && dbInventory && dbInventory.length > 0) {
+          const formattedInv: InventoryItem[] = dbInventory.map((item: any) => ({
+            id: item.id,
+            sku: item.sku,
+            barcode: item.barcode,
+            name: item.name,
+            category: item.category,
+            tags: item.tags || [],
+            imageUrl: item.image_url || item.imageUrl || '',
+            totalUnits: item.total_units ?? item.totalUnits ?? 0,
+            availableUnits: item.available_units ?? item.availableUnits ?? 0,
+            rentedUnits: item.rented_units ?? item.rentedUnits ?? 0,
+            maintenanceUnits: item.maintenance_units ?? item.maintenanceUnits ?? 0,
+            condition: item.condition,
+            dailyRate: item.daily_rate ?? item.dailyRate ?? 0,
+            deposit: item.deposit ?? 0,
+            locationRack: item.location_rack ?? item.locationRack ?? '',
+          }));
+          setInventory(formattedInv);
+        }
+
+        // Fetch Transactions
+        const { data: dbTrx, error: trxErr } = await supabase.from('transactions').select('*');
+        if (!trxErr && dbTrx && dbTrx.length > 0) {
+          setTransactions(dbTrx as RentalTransaction[]);
+        }
+      } catch (err) {
+        console.error('Error fetching data from Supabase:', err);
+      }
+    }
+
+    fetchSupabaseData();
+  }, [session]);
+
+  // Sync to localStorage sebagai backup offline
   useEffect(() => {
     try {
       localStorage.setItem('bali_camping_inventory_v2', JSON.stringify(inventory));
@@ -131,7 +176,7 @@ export default function App() {
     setIsContractModalOpen(true);
   };
 
-  const handleCompleteRentalTransaction = (data: any) => {
+  const handleCompleteRentalTransaction = async (data: any) => {
     if (data && data.bookingId) {
       const newTrx: RentalTransaction = {
         id: data.bookingId,
@@ -183,12 +228,15 @@ export default function App() {
         return item;
       }));
 
+      // Upsert Transaction ke Supabase
+      await supabase.from('transactions').upsert([newTrx]);
+
       setIsContractModalOpen(false);
       setCurrentTab('laporan');
     }
   };
 
-  const handleCompleteReturn = (summary: any) => {
+  const handleCompleteReturn = async (summary: any) => {
     setReturnReceiptData(summary);
     setIsReturnReceiptOpen(true);
 
@@ -211,6 +259,9 @@ export default function App() {
       setTransactions(prev =>
         prev.map(t => (t.id === summary.trxId ? { ...t, status: 'Selesai' } : t))
       );
+
+      // Update status di Supabase
+      await supabase.from('transactions').update({ status: 'Selesai' }).eq('id', summary.trxId);
     }
   };
 
@@ -229,25 +280,28 @@ export default function App() {
     setIsItemFormModalOpen(true);
   };
 
-  const handleDeleteInventoryItem = (id: string) => {
+  const handleDeleteInventoryItem = async (id: string) => {
     setInventory(prev => prev.filter(item => item.id !== id));
+    await supabase.from('inventory').delete().eq('id', id);
   };
 
-  const handleSaveInventoryItem = (savedItem: Partial<InventoryItem>) => {
+  const handleSaveInventoryItem = async (savedItem: Partial<InventoryItem>) => {
     const cleanDailyRate = Math.max(1000, Math.round((Number(savedItem.dailyRate) || 25000) / 1000) * 1000);
     const cleanDeposit = Math.max(0, Math.round((Number(savedItem.deposit) || 0) / 1000) * 1000);
 
+    let updatedItem: InventoryItem;
+
     if (editingItem) {
-      setInventory(prev =>
-        prev.map(i => (i.id === editingItem.id ? ({ 
-          ...i, 
-          ...savedItem,
-          dailyRate: cleanDailyRate,
-          deposit: cleanDeposit,
-        } as InventoryItem) : i))
-      );
+      updatedItem = { 
+        ...editingItem, 
+        ...savedItem,
+        dailyRate: cleanDailyRate,
+        deposit: cleanDeposit,
+      } as InventoryItem;
+
+      setInventory(prev => prev.map(i => (i.id === editingItem.id ? updatedItem : i)));
     } else {
-      const newItem: InventoryItem = {
+      updatedItem = {
         id: `inv-${Date.now()}`,
         sku: savedItem.sku || `SKU-${Date.now().toString().slice(-4)}`,
         barcode: savedItem.barcode || `BAR-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -264,8 +318,27 @@ export default function App() {
         deposit: cleanDeposit,
         locationRack: savedItem.locationRack || 'Rak A1',
       };
-      setInventory(prev => [newItem, ...prev]);
+      setInventory(prev => [updatedItem, ...prev]);
     }
+
+    // Simpan/Update ke Database Supabase
+    await supabase.from('inventory').upsert([{
+      id: updatedItem.id,
+      sku: updatedItem.sku,
+      barcode: updatedItem.barcode,
+      name: updatedItem.name,
+      category: updatedItem.category,
+      tags: updatedItem.tags,
+      image_url: updatedItem.imageUrl,
+      total_units: updatedItem.totalUnits,
+      available_units: updatedItem.availableUnits,
+      rented_units: updatedItem.rentedUnits,
+      maintenance_units: updatedItem.maintenanceUnits,
+      condition: updatedItem.condition,
+      daily_rate: updatedItem.dailyRate,
+      deposit: updatedItem.deposit,
+      location_rack: updatedItem.locationRack,
+    }]);
   };
 
   const handleProcessReturnDirectly = (trxId: string) => {
@@ -335,7 +408,7 @@ export default function App() {
     );
   }
 
-  // Tampilan Utama Dashboard Operasional (Hanya Muncul Jika Sudah Login)
+  // Tampilan Utama Dashboard Operasional
   const currentAdminObj: AdminUser = {
     id: session.user.id,
     name: session.user.email?.split('@')[0] || 'Admin',
