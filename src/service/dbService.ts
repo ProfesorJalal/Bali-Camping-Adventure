@@ -3,49 +3,60 @@ import { InventoryItem, RentalTransaction } from '../types';
 
 // --- FUNGSI INVENTARIS ---
 export async function fetchInventoryFromSupabase(): Promise<InventoryItem[]> {
-  const { data, error } = await supabase.from('inventory').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   if (error) {
     console.error('Error mengambil data inventaris:', error);
     return [];
   }
-  return data.map((item: any) => ({
+
+  return (data || []).map((item: any) => ({
     id: item.id,
-    sku: item.sku,
-    barcode: item.barcode,
-    name: item.name,
-    category: item.category,
+    sku: item.sku || '',
+    barcode: item.barcode || '',
+    name: item.name || '',
+    category: item.category || 'Tenda & Shelter',
     tags: item.tags || [],
-    imageUrl: item.image_url,
-    totalUnits: item.total_units,
-    availableUnits: item.available_units,
-    rentedUnits: item.rented_units,
-    maintenanceUnits: item.maintenance_units,
-    condition: item.condition,
-    dailyRate: Number(item.daily_rate),
-    deposit: Number(item.deposit),
-    locationRack: item.location_rack,
+    imageUrl: item.image_url || '',
+    totalUnits: Number(item.total_units) || 1,
+    availableUnits: Number(item.available_units) || 1,
+    rentedUnits: Number(item.rented_units) || 0,
+    maintenanceUnits: Number(item.maintenance_units) || 0,
+    condition: item.condition || 'Bagus (Siap Pakai)',
+    dailyRate: Number(item.daily_rate) || 0,
+    deposit: Number(item.deposit) || 0,
+    locationRack: item.location_rack || 'Rak A1',
   }));
 }
 
 export async function saveInventoryItemToSupabase(item: InventoryItem) {
-  const { error } = await supabase.from('inventory').upsert({
+  const payload = {
     id: item.id,
-    sku: item.sku,
-    barcode: item.barcode,
-    name: item.name,
-    category: item.category,
-    tags: item.tags,
-    image_url: item.imageUrl,
-    total_units: item.totalUnits,
-    available_units: item.availableUnits,
-    rented_units: item.rentedUnits,
-    maintenance_units: item.maintenanceUnits,
-    condition: item.condition,
-    daily_rate: item.dailyRate,
-    deposit: item.deposit,
-    location_rack: item.locationRack,
-  });
-  if (error) console.error('Error menyimpan barang inventaris:', error);
+    sku: item.sku || `SKU-${Date.now().toString().slice(-4)}`,
+    barcode: item.barcode || `BAR-${Math.floor(100000 + Math.random() * 900000)}`,
+    name: item.name || 'Barang Tanpa Nama',
+    category: item.category || 'Lain-lain',
+    tags: item.tags || [],
+    image_url: item.imageUrl || '',
+    total_units: Number(item.totalUnits) || 1,
+    available_units: Number(item.availableUnits) || 0,
+    rented_units: Number(item.rentedUnits) || 0,
+    maintenance_units: Number(item.maintenanceUnits) || 0,
+    condition: item.condition || 'Bagus (Siap Pakai)',
+    daily_rate: Number(item.dailyRate) || 0,
+    deposit: Number(item.deposit) || 0,
+    location_rack: item.locationRack || 'Rak A1',
+  };
+
+  const { data, error } = await supabase.from('inventory').upsert(payload);
+  if (error) {
+    console.error('Error menyimpan barang inventaris ke Supabase:', error);
+  } else {
+    console.log('Berhasil menyimpan barang ke Supabase:', data);
+  }
 }
 
 export async function deleteInventoryItemFromSupabase(id: string) {
@@ -55,57 +66,66 @@ export async function deleteInventoryItemFromSupabase(id: string) {
 
 // --- FUNGSI TRANSAKSI ---
 export async function fetchTransactionsFromSupabase(): Promise<RentalTransaction[]> {
-  const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   if (error) {
     console.error('Error mengambil data transaksi:', error);
     return [];
   }
-  return data.map((trx: any) => ({
+
+  return (data || []).map((trx: any) => ({
     id: trx.id,
-    customerName: trx.customer_name,
-    customerPhone: trx.customer_phone,
-    customerKtp: trx.customer_ktp,
-    idTypeHeld: trx.id_type_held,
-    destination: trx.destination,
-    pickupDate: trx.pickup_date,
-    pickupTime: trx.pickup_time,
-    returnDate: trx.return_date,
-    returnTime: trx.return_time,
-    durationDays: trx.duration_days,
-    items: trx.items,
-    subtotal: Number(trx.subtotal),
-    discount: Number(trx.discount),
-    depositPaid: Number(trx.deposit_paid),
-    totalPaid: Number(trx.total_paid),
-    paymentMethod: trx.payment_method,
-    status: trx.status,
-    dispatchOfficer: trx.dispatch_officer,
-    createdAt: trx.created_at,
+    customerName: trx.customer_name || '',
+    customerPhone: trx.customer_phone || '',
+    customerKtp: trx.customer_ktp || '',
+    idTypeHeld: trx.id_type_held || 'KTP',
+    destination: trx.destination || '',
+    pickupDate: trx.pickup_date || '',
+    pickupTime: trx.pickup_time || '09:00 WITA',
+    returnDate: trx.return_date || '',
+    returnTime: trx.return_time || '18:00 WITA',
+    durationDays: Number(trx.duration_days) || 1,
+    items: trx.items || [],
+    subtotal: Number(trx.subtotal) || 0,
+    discount: Number(trx.discount) || 0,
+    depositPaid: Number(trx.deposit_paid) || 0,
+    totalPaid: Number(trx.total_paid) || 0,
+    paymentMethod: trx.payment_method || 'QRIS',
+    status: trx.status || 'Aktif',
+    dispatchOfficer: trx.dispatch_officer || 'Administrator',
+    createdAt: trx.created_at || new Date().toISOString(),
   }));
 }
 
 export async function saveTransactionToSupabase(trx: RentalTransaction) {
-  const { error } = await supabase.from('transactions').upsert({
+  const payload = {
     id: trx.id,
     customer_name: trx.customerName,
     customer_phone: trx.customerPhone,
-    customer_ktp: trx.customerKtp,
-    id_type_held: trx.idTypeHeld,
-    destination: trx.destination,
+    customer_ktp: trx.customerKtp || '',
+    id_type_held: trx.idTypeHeld || 'KTP',
+    destination: trx.destination || '',
     pickup_date: trx.pickupDate,
-    pickup_time: trx.pickupTime,
+    pickup_time: trx.pickupTime || '09:00 WITA',
     return_date: trx.returnDate,
-    return_time: trx.returnTime,
-    duration_days: trx.durationDays,
-    items: trx.items,
-    subtotal: trx.subtotal,
-    discount: trx.discount,
-    deposit_paid: trx.depositPaid,
-    total_paid: trx.totalPaid,
-    payment_method: trx.paymentMethod,
-    status: trx.status,
-    dispatch_officer: trx.dispatchOfficer,
-    created_at: trx.createdAt,
-  });
-  if (error) console.error('Error menyimpan transaksi:', error);
+    return_time: trx.returnTime || '18:00 WITA',
+    duration_days: Number(trx.durationDays) || 1,
+    items: trx.items || [],
+    subtotal: Number(trx.subtotal) || 0,
+    discount: Number(trx.discount) || 0,
+    deposit_paid: Number(trx.depositPaid) || 0,
+    total_paid: Number(trx.totalPaid) || 0,
+    payment_method: trx.paymentMethod || 'QRIS',
+    status: trx.status || 'Aktif',
+    dispatch_officer: trx.dispatchOfficer || 'Administrator',
+    created_at: trx.createdAt || new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from('transactions').upsert(payload);
+  if (error) {
+    console.error('Error menyimpan transaksi ke Supabase:', error);
+  }
 }
