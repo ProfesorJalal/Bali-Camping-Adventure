@@ -177,89 +177,122 @@ export default function App() {
   };
 
   const handleCompleteRentalTransaction = async (data: any) => {
-    if (!data || !data.bookingId) return;
+  if (!data || !data.bookingId) return;
 
-    const newTrx: RentalTransaction = {
-      id: data.bookingId,
-      customerName: data.customerName,
-      customerPhone: data.customerPhone,
-      customerKtp: data.customerKtp,
-      idTypeHeld: data.guaranteeType,
-      destination: data.destination,
-      pickupDate: data.pickupDate,
-      pickupTime: data.pickupTime || '09:00 WITA',
-      returnDate: data.returnDate,
-      returnTime: data.returnTime || '18:00 WITA',
-      durationDays: data.durationDays,
-      items: data.items.map((i: any) => ({
-        itemSku: i.item.sku,
-        itemName: i.item.name,
-        category: i.item.category,
-        quantity: i.quantity,
-        unitPrice: i.pricePerDay,
-        unitDeposit: i.item.deposit || 0,
-        imageUrl: i.item.imageUrl,
-      })),
-      subtotal: data.subtotalSewa,
-      discount: data.discountAmount,
-      depositPaid: data.refundableDeposit,
-      totalPaid: data.totalPayment,
-      paymentMethod: data.paymentMethod,
-      status: 'Aktif',
-      dispatchOfficer: session?.user?.email || 'Administrator',
-      createdAt: data.createdAt || new Date().toISOString(),
+  // 1. Objek untuk State React (camelCase)
+  const newTrx: RentalTransaction = {
+    id: data.bookingId,
+    customerName: data.customerName,
+    customerPhone: data.customerPhone,
+    customerKtp: data.customerKtp,
+    idTypeHeld: data.guaranteeType,
+    destination: data.destination,
+    pickupDate: data.pickupDate,
+    pickupTime: data.pickupTime || '09:00 WITA',
+    returnDate: data.returnDate,
+    returnTime: data.returnTime || '18:00 WITA',
+    durationDays: data.durationDays,
+    items: data.items.map((i: any) => ({
+      itemSku: i.item.sku,
+      itemName: i.item.name,
+      category: i.item.category,
+      quantity: i.quantity,
+      unitPrice: i.pricePerDay,
+      unitDeposit: i.item.deposit || 0,
+      imageUrl: i.item.imageUrl,
+    })),
+    subtotal: data.subtotalSewa,
+    discount: data.discountAmount,
+    depositPaid: data.refundableDeposit,
+    totalPaid: data.totalPayment,
+    paymentMethod: data.paymentMethod,
+    status: 'Aktif',
+    dispatchOfficer: session?.user?.email || 'Administrator',
+    createdAt: data.createdAt || new Date().toISOString(),
+  };
+
+  // 2. Simpan Transaksi Baru Ke State React
+  setTransactions((prev) => {
+    const exists = prev.some((t) => t.id === newTrx.id);
+    if (exists) return prev;
+    return [newTrx, ...prev];
+  });
+
+  // 3. Hitung Ulang Stok Inventory
+  const updatedInventory = inventory.map((item) => {
+    const matched = data.items.find(
+      (i: any) => i.item.id === item.id || i.item.sku === item.sku
+    );
+    if (matched) {
+      const rentedQty = matched.quantity;
+      return {
+        ...item,
+        availableUnits: Math.max(0, item.availableUnits - rentedQty),
+        rentedUnits: (item.rentedUnits || 0) + rentedQty,
+      };
+    }
+    return item;
+  });
+
+  setInventory(updatedInventory);
+
+  // 4. Simpan Ke Supabase (Mapping Objek snake_case jika kolom Supabase menggunakan snake_case)
+  try {
+    const payloadSupabase = {
+      id: newTrx.id,
+      customer_name: newTrx.customerName,
+      customer_phone: newTrx.customerPhone,
+      customer_ktp: newTrx.customerKtp,
+      id_type_held: newTrx.idTypeHeld,
+      destination: newTrx.destination,
+      pickup_date: newTrx.pickupDate,
+      pickup_time: newTrx.pickupTime,
+      return_date: newTrx.returnDate,
+      return_time: newTrx.returnTime,
+      duration_days: newTrx.durationDays,
+      items: newTrx.items, // Kolom 'items' di Supabase harus bertipe JSON / JSONB
+      subtotal: newTrx.subtotal,
+      discount: newTrx.discount,
+      deposit_paid: newTrx.depositPaid,
+      total_paid: newTrx.totalPaid,
+      payment_method: newTrx.paymentMethod,
+      status: newTrx.status,
+      dispatch_officer: newTrx.dispatchOfficer,
+      created_at: newTrx.createdAt,
     };
 
-    // 1. Simpan Transaksi Baru Ke State
-    setTransactions((prev) => {
-      const exists = prev.some((t) => t.id === newTrx.id);
-      if (exists) return prev;
-      return [newTrx, ...prev];
-    });
+    const { error: trxError } = await supabase
+      .from('transactions')
+      .upsert([payloadSupabase]);
 
-    // 2. Hitung Ulang Stok Inventory (Sewa Baru)
-    const updatedInventory = inventory.map((item) => {
+    if (trxError) {
+      console.error('Gagal menyimpan transaksi ke Supabase:', trxError.message);
+      alert('Gagal menyimpan transaksi ke database: ' + trxError.message);
+      return;
+    }
+
+    // Update stok barang di Supabase
+    for (const item of updatedInventory) {
       const matched = data.items.find(
         (i: any) => i.item.id === item.id || i.item.sku === item.sku
       );
       if (matched) {
-        const rentedQty = matched.quantity;
-        return {
-          ...item,
-          availableUnits: Math.max(0, item.availableUnits - rentedQty),
-          rentedUnits: (item.rentedUnits || 0) + rentedQty,
-        };
+        await supabase
+          .from('inventory')
+          .update({
+            available_units: item.availableUnits,
+            rented_units: item.rentedUnits,
+          })
+          .eq('id', item.id);
       }
-      return item;
-    });
-
-    setInventory(updatedInventory);
-
-    // 3. Simpan Ke Supabase (Database)
-    try {
-      await supabase.from('transactions').upsert([newTrx]);
-
-      for (const item of updatedInventory) {
-        const matched = data.items.find(
-          (i: any) => i.item.id === item.id || i.item.sku === item.sku
-        );
-        if (matched) {
-          await supabase
-            .from('inventory')
-            .update({
-              available_units: item.availableUnits,
-              rented_units: item.rentedUnits,
-            })
-            .eq('id', item.id);
-        }
-      }
-    } catch (err) {
-      console.error('Error syncing rental transaction to Supabase:', err);
     }
+  } catch (err) {
+    console.error('Error syncing rental transaction to Supabase:', err);
+  }
 
-    setIsContractModalOpen(false);
-    setCurrentTab('laporan');
-  };
+  setIsContractModalOpen(false);
+  setCurrentTab('laporan');
+};
 
   const handleCompleteReturn = async (summary: any) => {
     setReturnReceiptData(summary);
